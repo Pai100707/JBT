@@ -2,18 +2,25 @@
 setlocal enabledelayedexpansion
 
 :: ============================================================
-::  JBT - Build Script
+::  JBT - Build Release Script
 ::  สร้าง .exe ด้วย jpackage (app-image, portable)
-::  Usage: build_release.bat [version]
-::  Example: build_release.bat 1.0.2
+::  Usage: build_release.bat [version] [icon_path] [main_class]
+::  Example:
+::    build_release.bat 1.0.2
+::    build_release.bat 1.0.2 src\main\resources\icon.ico
+::    build_release.bat 1.0.2 "" com.example.app.Main
+::
+::  NOTE: version ต้องเป็น x.y.z เท่านั้น (ตัวเลข+จุด)
+::        เช่น 1.0.2  (OK) | 1.0.2-beta (ERROR!)
 :: ============================================================
 
-:: ── Version ──────────────────────────────────────────────────
+:: ── Args ─────────────────────────────────────────────────────
 set VERSION=%~1
-if "%VERSION%"=="" set VERSION=1.0.1
-:: NOTE: jpackage ต้องการ version แบบ x.y.z (ตัวเลขและจุดเท่านั้น)
-::       เช่น: build_release.bat 1.0.2   (OK)
-::             build_release.bat 1.0.2-beta  (ERROR!)
+if "%VERSION%"=="" set VERSION=1.0.2
+
+set ICON_ARG=%~2
+set MAIN_CLASS=%~3
+if "%MAIN_CLASS%"=="" set MAIN_CLASS=Main
 
 :: ── Paths ────────────────────────────────────────────────────
 set PROJECT_DIR=%~dp0
@@ -29,7 +36,7 @@ echo  Output: %OUT_DIR%
 echo ============================================================
 echo.
 
-:: ── Clean up previous build artifacts ────────────────────────
+:: ── Clean ────────────────────────────────────────────────────
 if exist "%TEMP_CLASSES%" (
     echo [1/4] Cleaning temp_classes...
     rmdir /s /q "%TEMP_CLASSES%"
@@ -39,7 +46,6 @@ if exist "%JAR_INPUT%" (
     rmdir /s /q "%JAR_INPUT%"
 )
 
-:: ── Create directories ───────────────────────────────────────
 mkdir "%TEMP_CLASSES%" 2>nul
 mkdir "%JAR_INPUT%"    2>nul
 
@@ -57,15 +63,12 @@ if errorlevel 1 (
     echo.
     echo [ERROR] Compilation failed!
     rmdir /s /q "%TEMP_CLASSES%"
-    pause
-    exit /b 1
+    pause & exit /b 1
 )
 echo        OK
 
 :: ── Step 2: Package JAR ──────────────────────────────────────
 echo [2/4] Packaging into JBT.jar...
-
-:: Write manifest to temp file
 echo Manifest-Version: 1.0> "%TEMP_CLASSES%\MANIFEST.MF"
 echo Main-Class: Main>> "%TEMP_CLASSES%\MANIFEST.MF"
 echo.>> "%TEMP_CLASSES%\MANIFEST.MF"
@@ -79,17 +82,37 @@ if errorlevel 1 (
     echo.
     echo [ERROR] JAR packaging failed!
     rmdir /s /q "%TEMP_CLASSES%"
-    pause
-    exit /b 1
+    pause & exit /b 1
 )
 echo        OK
 
-:: ── Step 3: Cleanup temp classes ─────────────────────────────
+:: ── Step 3: Cleanup temp ─────────────────────────────────────
 echo [3/4] Cleaning up temp_classes...
 rmdir /s /q "%TEMP_CLASSES%"
 echo        OK
 
-:: ── Step 4: jpackage → .exe ──────────────────────────────────
+:: ── Step 4: Resolve icon ─────────────────────────────────────
+:: Priority: 1) arg2  2) src\main\resources\icon.ico  3) none
+set JPACKAGE_ICON=
+if not "%ICON_ARG%"=="" (
+    if exist "%PROJECT_DIR%%ICON_ARG%" (
+        set JPACKAGE_ICON=--icon "%PROJECT_DIR%%ICON_ARG%"
+        echo        Icon: %PROJECT_DIR%%ICON_ARG%
+    ) else if exist "%ICON_ARG%" (
+        set JPACKAGE_ICON=--icon "%ICON_ARG%"
+        echo        Icon: %ICON_ARG%
+    ) else (
+        echo        [WARN] Icon not found: %ICON_ARG% -- skipping
+    )
+) else (
+    set DEFAULT_ICON=%PROJECT_DIR%src\main\resources\icon.ico
+    if exist "!DEFAULT_ICON!" (
+        set JPACKAGE_ICON=--icon "!DEFAULT_ICON!"
+        echo        Icon (auto-detected): !DEFAULT_ICON!
+    )
+)
+
+:: ── Step 5: jpackage → .exe ──────────────────────────────────
 echo [4/4] Running jpackage (this may take a moment)...
 jpackage ^
     --type app-image ^
@@ -97,14 +120,14 @@ jpackage ^
     --app-version %VERSION% ^
     --input "%JAR_INPUT%" ^
     --main-jar JBT.jar ^
-    --main-class Main ^
-    --dest "%OUT_DIR%"
+    --main-class %MAIN_CLASS% ^
+    --dest "%OUT_DIR%" ^
+    %JPACKAGE_ICON%
 
 if errorlevel 1 (
     echo.
     echo [ERROR] jpackage failed!
-    pause
-    exit /b 1
+    pause & exit /b 1
 )
 echo        OK
 

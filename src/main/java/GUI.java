@@ -9,10 +9,10 @@ import java.util.ArrayList;
 public class GUI {
 
     // ── State ────────────────────────────────────────────────────────────────
-    private File   selectedLibFile = null;
-    private String loadedConfigPath = null;   // path of the currently-loaded .jbt
+    private File   selectedLibFile  = null;
+    private String loadedConfigPath = null;
 
-    // ── Log textarea (used by Logger sink) ───────────────────────────────────
+    // ── Log textarea ─────────────────────────────────────────────────────────
     private JTextArea txtLog;
 
     /** Append text to the log area (thread-safe). */
@@ -30,280 +30,307 @@ public class GUI {
         loadedConfigPath = cfg.configFilePath;
 
         JFrame frame = new JFrame("Java Build Tool (JBT)");
-        frame.setSize(960, 620);
+        frame.setSize(960, 640);
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
         try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
         catch (Exception ignored) {}
 
-        JPanel mainPanel = new JPanel(new GridBagLayout());
-        mainPanel.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+        JPanel main = new JPanel(new GridBagLayout());
+        main.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets  = new Insets(5, 5, 5, 5);
-        gbc.anchor  = GridBagConstraints.WEST;
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.anchor = GridBagConstraints.WEST;
 
         int row = 0;
 
         // ── Row 0: Project Folder ────────────────────────────────────────
-        addLabel(mainPanel, gbc, row, "Project Folder");
+        addLabel(main, gbc, row, "Project Folder");
         JTextField txtProject = new JTextField(cfg.projectFolder);
-        addField(mainPanel, gbc, row, 1, 2, txtProject);
+        addField(main, gbc, row, 1, 2, txtProject);
         JButton btnBrowseProject = new JButton("Browse");
-        addWidget(mainPanel, gbc, row, 3, 1, btnBrowseProject);
+        addWidget(main, gbc, row, 3, 1, btnBrowseProject);
         row++;
 
-        // ── Row 1: Source Folder ─────────────────────────────────────────
-        addLabel(mainPanel, gbc, row, "Source Folder");
-        JTextField txtSrc = new JTextField(cfg.srcFolder);
-        addField(mainPanel, gbc, row, 1, 3, txtSrc);
+        // ── Row 1: SourceSet | PackageFolder | MainClass ─────────────────
+        addLabel(main, gbc, row, "Source Set");
+        JComboBox<String> comboSourceSet = new JComboBox<>(new String[]{"main", "test"});
+        comboSourceSet.setSelectedItem(cfg.sourceSet);
+        addWidget(main, gbc, row, 1, 1, comboSourceSet);
+
+        gbc.gridx = 2; gbc.gridy = row; gbc.weightx = 0; gbc.gridwidth = 1;
+        gbc.fill = GridBagConstraints.NONE;
+        main.add(new JLabel("Package Folder"), gbc);
+
+        JTextField txtPackageFolder = new JTextField(cfg.packageFolder);
+        gbc.gridx = 3; gbc.gridy = row; gbc.weightx = 0.6; gbc.gridwidth = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        main.add(txtPackageFolder, gbc);
+
+        gbc.gridx = 4; gbc.gridy = row; gbc.weightx = 0; gbc.gridwidth = 1;
+        gbc.fill = GridBagConstraints.NONE;
+        main.add(new JLabel("Main Class"), gbc);
+
+        JTextField txtMainClass = new JTextField(cfg.mainClass);
+        gbc.gridx = 5; gbc.gridy = row; gbc.weightx = 0.4; gbc.gridwidth = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        main.add(txtMainClass, gbc);
         row++;
 
         // ── Row 2: Output Folder ─────────────────────────────────────────
-        addLabel(mainPanel, gbc, row, "Output Folder");
+        addLabel(main, gbc, row, "Output Folder");
         JTextField txtOutput = new JTextField(cfg.output);
-        addField(mainPanel, gbc, row, 1, 3, txtOutput);
+        addField(main, gbc, row, 1, 3, txtOutput);
         row++;
 
         // ── Row 3: Library ──────────────────────────────────────────────
-        addLabel(mainPanel, gbc, row, "Library");
+        addLabel(main, gbc, row, "Library");
         DefaultComboBoxModel<String> libModel = new DefaultComboBoxModel<>();
         for (String lib : cfg.library) libModel.addElement(lib);
         JComboBox<String> comboLibrary = new JComboBox<>(libModel);
-        addField(mainPanel, gbc, row, 1, 1, comboLibrary);
-        JButton btnDeleteSelected = new JButton("Delete selected");
-        addWidget(mainPanel, gbc, row, 2, 1, btnDeleteSelected);
-        JButton btnAddLibrary = new JButton("ADD");
-        addWidget(mainPanel, gbc, row, 3, 1, btnAddLibrary);
+        addField(main, gbc, row, 1, 1, comboLibrary);
+        JButton btnDeleteLib = new JButton("Delete");
+        addWidget(main, gbc, row, 2, 1, btnDeleteLib);
+        JButton btnAddLib = new JButton("ADD");
+        addWidget(main, gbc, row, 3, 1, btnAddLib);
         JButton btnBrowseLib = new JButton("Browse library");
-        addWidget(mainPanel, gbc, row, 4, 1, btnBrowseLib);
+        addWidget(main, gbc, row, 4, 1, btnBrowseLib);
         row++;
 
-        // ── Row 4: Build Mode + options ──────────────────────────────────
-        addLabel(mainPanel, gbc, row, "Build Mode");
-        String[] buildModes = { "Normal", "Onefile" };
-        JComboBox<String> comboBuildMode = new JComboBox<>(buildModes);
+        // ── Row 4: Build Mode | CloseWhenBuildFinish | DebugBuild ───────
+        addLabel(main, gbc, row, "Build Mode");
+        JComboBox<String> comboBuildMode = new JComboBox<>(new String[]{"Normal", "Onefile"});
         comboBuildMode.setSelectedItem(cfg.buildMode);
-        addField(mainPanel, gbc, row, 1, 1, comboBuildMode);
-
-        JCheckBox chkAddResources = new JCheckBox("Add Resources", cfg.addResources);
-        addWidget(mainPanel, gbc, row, 2, 1, chkAddResources);
-
+        addWidget(main, gbc, row, 1, 1, comboBuildMode);
         JCheckBox chkClose = new JCheckBox("Close When Finish", cfg.closeWhenBuildFinish);
-        addWidget(mainPanel, gbc, row, 3, 1, chkClose);
-
-        JCheckBox chkDebug = new JCheckBox("Debug", cfg.debug);
-        addWidget(mainPanel, gbc, row, 4, 1, chkDebug);
+        addWidget(main, gbc, row, 2, 1, chkClose);
+        JCheckBox chkDebug = new JCheckBox("Debug Build", cfg.debugBuild);
+        addWidget(main, gbc, row, 3, 1, chkDebug);
         row++;
 
-        // ── Row 5: Icon ──────────────────────────────────────────────────
-        addLabel(mainPanel, gbc, row, "Icon");
-        JCheckBox chkHasIcon = new JCheckBox("Pack Icon", cfg.hasIcon);
-        addWidget(mainPanel, gbc, row, 1, 1, chkHasIcon);
-        JTextField txtIconPath = new JTextField(cfg.iconPath.isEmpty() ? "(no icon)" : cfg.iconPath);
-        txtIconPath.setEnabled(cfg.hasIcon);
-        addField(mainPanel, gbc, row, 2, 1, txtIconPath);
-        JButton btnBrowseIcon = new JButton("Browse Icon");
-        btnBrowseIcon.setEnabled(cfg.hasIcon);
-        addWidget(mainPanel, gbc, row, 3, 1, btnBrowseIcon);
+        // ── Row 5: Resources ─────────────────────────────────────────────
+        addLabel(main, gbc, row, "Resources");
+        JCheckBox chkAddResources = new JCheckBox("Add Resources", cfg.addResources);
+        addWidget(main, gbc, row, 1, 1, chkAddResources);
+
+        JTextField txtResourcesPath = new JTextField(
+            cfg.resourcesPath.isEmpty() ? "" : cfg.resourcesPath);
+        txtResourcesPath.setEnabled(cfg.addResources);
+        txtResourcesPath.setToolTipText("Leave empty to use default: src/{SourceSet}/resources/{PackageFolder}");
+        addField(main, gbc, row, 2, 1, txtResourcesPath);
+
+        JButton btnBrowseResources = new JButton("Browse");
+        btnBrowseResources.setEnabled(cfg.addResources);
+        addWidget(main, gbc, row, 3, 1, btnBrowseResources);
         row++;
 
-        // ── Row 6: Config bar (Load / Save / Build) ───────────────────────
+        // ── Row 6: Icon ──────────────────────────────────────────────────
+        addLabel(main, gbc, row, "Icon");
+        JCheckBox chkAddIcon = new JCheckBox("Add Icon", cfg.addIcon);
+        addWidget(main, gbc, row, 1, 1, chkAddIcon);
+
+        JTextField txtIconPath = new JTextField(
+            cfg.iconPath.isEmpty() ? "" : cfg.iconPath);
+        txtIconPath.setEnabled(cfg.addIcon);
+        txtIconPath.setToolTipText("Leave empty to use default: src/{SourceSet}/resources/{PackageFolder}/icon.ico");
+        addField(main, gbc, row, 2, 1, txtIconPath);
+
+        JButton btnBrowseIcon = new JButton("Browse");
+        btnBrowseIcon.setEnabled(cfg.addIcon);
+        addWidget(main, gbc, row, 3, 1, btnBrowseIcon);
+        row++;
+
+        // ── Row 7: Load / Save / Build ───────────────────────────────────
         JButton btnLoadConfig = new JButton("Load Config (.jbt)");
-        addWidget(mainPanel, gbc, row, 0, 1, btnLoadConfig);
+        addWidget(main, gbc, row, 0, 1, btnLoadConfig);
 
-        JLabel lblConfigStatus = new JLabel(loadedConfigPath != null
-            ? "Config: " + new File(loadedConfigPath).getName()
-            : "No config loaded");
+        JLabel lblConfigStatus = new JLabel(
+            loadedConfigPath != null ? new File(loadedConfigPath).getName() : "No config loaded");
         lblConfigStatus.setForeground(loadedConfigPath != null ? new Color(0, 128, 0) : Color.GRAY);
-        addField(mainPanel, gbc, row, 1, 2, lblConfigStatus);
+        addField(main, gbc, row, 1, 2, lblConfigStatus);
 
         JButton btnSaveConfig = new JButton("Save Config");
-        addWidget(mainPanel, gbc, row, 3, 1, btnSaveConfig);
+        addWidget(main, gbc, row, 3, 1, btnSaveConfig);
         JButton btnBuild = new JButton("Start Build");
         btnBuild.setFont(new Font("SansSerif", Font.BOLD, 12));
-        addWidget(mainPanel, gbc, row, 4, 1, btnBuild);
+        addWidget(main, gbc, row, 4, 1, btnBuild);
         row++;
 
-        // ── Row 7: Log area ───────────────────────────────────────────────
-        JPanel logSidePanel = new JPanel(new GridBagLayout());
-        GridBagConstraints sGbc = new GridBagConstraints();
-        sGbc.gridx = 0; sGbc.gridy = 0; sGbc.anchor = GridBagConstraints.NORTHWEST; sGbc.insets = new Insets(0,0,8,0);
-        logSidePanel.add(new JLabel("Output Log"), sGbc);
+        // ── Row 8: Log area ───────────────────────────────────────────────
+        JPanel logSide = new JPanel(new GridBagLayout());
+        GridBagConstraints sg = new GridBagConstraints();
+        sg.gridx = 0; sg.gridy = 0; sg.anchor = GridBagConstraints.NORTHWEST; sg.insets = new Insets(0,0,8,0);
+        logSide.add(new JLabel("Output Log"), sg);
         JButton btnClearLog = new JButton("Clear");
-        sGbc.gridy = 1; sGbc.insets = new Insets(4,0,0,0);
-        logSidePanel.add(btnClearLog, sGbc);
+        sg.gridy = 1; sg.insets = new Insets(4,0,0,0);
+        logSide.add(btnClearLog, sg);
 
-        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0; gbc.fill = GridBagConstraints.NONE;
+        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0; gbc.fill = GridBagConstraints.NONE;
         gbc.gridwidth = 1; gbc.anchor = GridBagConstraints.NORTHWEST;
-        mainPanel.add(logSidePanel, gbc);
+        main.add(logSide, gbc);
 
         txtLog = new JTextArea();
         txtLog.setEditable(false);
         txtLog.setFont(new Font("Monospaced", Font.PLAIN, 11));
-        JScrollPane scrollPane = new JScrollPane(txtLog);
+        JScrollPane scroll = new JScrollPane(txtLog);
         gbc.gridx = 1; gbc.gridy = row; gbc.weightx = 1.0; gbc.weighty = 1.0;
         gbc.fill = GridBagConstraints.BOTH; gbc.gridwidth = 4;
-        mainPanel.add(scrollPane, gbc);
+        main.add(scroll, gbc);
 
-        // ── Wire events ───────────────────────────────────────────────────
+        // ── Events ────────────────────────────────────────────────────────
 
         // Load Config
         btnLoadConfig.addActionListener(e -> {
             JFileChooser fc = new JFileChooser();
             fc.setFileFilter(new FileNameExtensionFilter("JBT Config (*.jbt)", "jbt"));
             if (fc.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
-                File chosen = fc.getSelectedFile();
-                JBTConfig loaded = JBTConfig.loadFromFile(chosen.getAbsolutePath());
+                JBTConfig loaded = JBTConfig.loadFromFile(fc.getSelectedFile().getAbsolutePath());
                 if (loaded == null) {
                     JOptionPane.showMessageDialog(frame,
-                        "Failed to parse config: " + chosen.getAbsolutePath(),
+                        "Failed to parse: " + fc.getSelectedFile().getAbsolutePath(),
                         "Error", JOptionPane.ERROR_MESSAGE);
                     return;
                 }
                 loadedConfigPath = loaded.configFilePath;
-                applyConfigToForm(loaded, txtProject, txtSrc, txtOutput,
-                    comboBuildMode, libModel, chkAddResources, chkClose,
-                    chkDebug, chkHasIcon, txtIconPath, btnBrowseIcon);
-                lblConfigStatus.setText("Config: " + chosen.getName());
+                applyToForm(loaded, txtProject, comboSourceSet, txtPackageFolder,
+                    txtMainClass, txtOutput, comboBuildMode, libModel,
+                    chkAddResources, txtResourcesPath, btnBrowseResources,
+                    chkClose, chkDebug,
+                    chkAddIcon, txtIconPath, btnBrowseIcon);
+                lblConfigStatus.setText(fc.getSelectedFile().getName());
                 lblConfigStatus.setForeground(new Color(0, 128, 0));
-                Log("Loaded config: " + chosen.getAbsolutePath() + "\n");
+                Log("Loaded config: " + loaded.configFilePath + "\n");
             }
         });
 
-        // Browse project
         btnBrowseProject.addActionListener(e -> {
-            FileManager fm = new FileManager();
-            File dir = fm.openFileChooser(JFileChooser.DIRECTORIES_ONLY);
+            File dir = new FileManager().openFileChooser(JFileChooser.DIRECTORIES_ONLY);
             if (dir != null) txtProject.setText(dir.getAbsolutePath());
         });
 
-        // Browse lib
         btnBrowseLib.addActionListener(e -> {
-            if (selectedLibFile != null) { selectedLibFile = null; btnAddLibrary.setText("ADD"); }
+            if (selectedLibFile != null) { selectedLibFile = null; btnAddLib.setText("ADD"); }
             JFileChooser fc = new JFileChooser();
             fc.setMultiSelectionEnabled(true);
             fc.setFileSelectionMode(JFileChooser.FILES_ONLY);
             if (fc.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
                 File[] sel = fc.getSelectedFiles();
-                if (sel.length == 1) {
-                    selectedLibFile = sel[0];
-                    btnAddLibrary.setText(sel[0].getName());
-                } else {
-                    for (File f : sel) libModel.addElement(f.getAbsolutePath());
-                    btnAddLibrary.setText("ADD");
-                }
+                if (sel.length == 1) { selectedLibFile = sel[0]; btnAddLib.setText(sel[0].getName()); }
+                else { for (File f : sel) libModel.addElement(f.getAbsolutePath()); }
             }
         });
 
-        btnAddLibrary.addActionListener(e -> {
+        btnAddLib.addActionListener(e -> {
             if (selectedLibFile != null) {
                 libModel.addElement(selectedLibFile.getAbsolutePath());
-                selectedLibFile = null;
-                btnAddLibrary.setText("ADD");
+                selectedLibFile = null; btnAddLib.setText("ADD");
             } else {
-                JOptionPane.showMessageDialog(frame, "Please browse a library file first!", "Warning", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(frame, "Browse a library file first!", "Warning", JOptionPane.WARNING_MESSAGE);
             }
         });
 
-        btnDeleteSelected.addActionListener(e -> {
+        btnDeleteLib.addActionListener(e -> {
             String sel = (String) comboLibrary.getSelectedItem();
             if (sel != null) libModel.removeElement(sel);
         });
 
-        // Icon checkbox toggle
-        chkHasIcon.addActionListener(e -> {
-            boolean on = chkHasIcon.isSelected();
-            txtIconPath.setEnabled(on);
-            btnBrowseIcon.setEnabled(on);
-            if (!on) txtIconPath.setText("(no icon)");
+        // Resources toggle
+        chkAddResources.addActionListener(e -> {
+            txtResourcesPath.setEnabled(chkAddResources.isSelected());
+            btnBrowseResources.setEnabled(chkAddResources.isSelected());
+        });
+        btnBrowseResources.addActionListener(e -> {
+            File dir = new FileManager().openFileChooser(JFileChooser.DIRECTORIES_ONLY);
+            if (dir != null) txtResourcesPath.setText(dir.getAbsolutePath());
         });
 
+        // Icon toggle
+        chkAddIcon.addActionListener(e -> {
+            txtIconPath.setEnabled(chkAddIcon.isSelected());
+            btnBrowseIcon.setEnabled(chkAddIcon.isSelected());
+        });
         btnBrowseIcon.addActionListener(e -> {
             JFileChooser fc = new JFileChooser();
-            fc.setFileFilter(new FileNameExtensionFilter("Image files", "png", "ico", "jpg", "gif"));
-            if (fc.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
+            fc.setFileFilter(new FileNameExtensionFilter("Icon files", "ico", "png", "jpg", "gif"));
+            if (fc.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION)
                 txtIconPath.setText(fc.getSelectedFile().getAbsolutePath());
-            }
         });
 
         // Save Config
         btnSaveConfig.addActionListener(e -> {
             if (loadedConfigPath == null) {
-                // Ask where to save
                 JFileChooser fc = new JFileChooser();
                 fc.setFileFilter(new FileNameExtensionFilter("JBT Config (*.jbt)", "jbt"));
                 fc.setSelectedFile(new File("build.jbt"));
                 if (fc.showSaveDialog(frame) != JFileChooser.APPROVE_OPTION) return;
-                String path = fc.getSelectedFile().getAbsolutePath();
-                if (!path.toLowerCase().endsWith(".jbt")) path += ".jbt";
-                loadedConfigPath = path;
-                lblConfigStatus.setText("Config: " + new File(path).getName());
+                String p = fc.getSelectedFile().getAbsolutePath();
+                if (!p.toLowerCase().endsWith(".jbt")) p += ".jbt";
+                loadedConfigPath = p;
+                lblConfigStatus.setText(new File(p).getName());
                 lblConfigStatus.setForeground(new Color(0, 128, 0));
             }
-            saveConfig(frame, loadedConfigPath, txtProject, txtSrc, txtOutput,
-                comboBuildMode, libModel, chkAddResources, chkClose,
-                chkDebug, chkHasIcon, txtIconPath);
+            saveConfig(frame, loadedConfigPath,
+                txtProject, comboSourceSet, txtPackageFolder, txtMainClass, txtOutput,
+                comboBuildMode, libModel,
+                chkAddResources, txtResourcesPath,
+                chkClose, chkDebug,
+                chkAddIcon, txtIconPath);
         });
 
         btnClearLog.addActionListener(e -> txtLog.setText(""));
 
-        // Build
+        // Start Build
         btnBuild.addActionListener(e -> {
             btnBuild.setEnabled(false);
             btnBuild.setText("Building...");
 
-            JBTConfig runCfg = collectConfig(txtProject, txtSrc, txtOutput,
-                comboBuildMode, libModel, chkAddResources, chkClose,
-                chkDebug, chkHasIcon, txtIconPath);
+            JBTConfig runCfg = collectConfig(
+                txtProject, comboSourceSet, txtPackageFolder, txtMainClass, txtOutput,
+                comboBuildMode, libModel,
+                chkAddResources, txtResourcesPath,
+                chkClose, chkDebug,
+                chkAddIcon, txtIconPath);
             runCfg.configFilePath = loadedConfigPath;
 
-            boolean debugMode = chkDebug.isSelected();
-            Logger logger = new Logger(debugMode, msg -> Log(msg));
-
-            Log("Starting Build process...\n");
-            Log("Attached Libraries: " + runCfg.library + "\n");
+            Logger logger = new Logger(runCfg.debugBuild, msg -> Log(msg));
+            Log("Starting build...\n");
 
             new Thread(() -> {
                 try {
-                    Build builder = new Build();
-                    builder.StartBuild(runCfg, logger);
-                    Log("Build Finished Successfully!\n\n");
+                    new Build().StartBuild(runCfg, logger);
+                    Log("Build Finished!\n\n");
                 } catch (Exception ex) {
                     Log("Build Failed: " + ex.getMessage() + "\n\n");
                 } finally {
                     SwingUtilities.invokeLater(() -> {
                         btnBuild.setEnabled(true);
                         btnBuild.setText("Start Build");
-
-                        if (chkClose.isSelected()) {
-                            System.exit(0);
-                        }
+                        if (chkClose.isSelected()) System.exit(0);
                     });
                 }
             }).start();
         });
 
-        frame.add(mainPanel);
+        frame.add(main);
         frame.setLocationRelativeTo(null);
         frame.setVisible(true);
-
-        // Auto-build if cfg flag is set
-        if (cfg.autoBuild) {
-            Log("[AutoBuild Activated] Triggering compiler engine...\n");
-            btnBuild.doClick();
-        }
     }
 
-    // ── Helper: apply a loaded config to all form controls ───────────────────
+    // ── Form helpers ─────────────────────────────────────────────────────────
 
-    private void applyConfigToForm(JBTConfig cfg,
-            JTextField txtProject, JTextField txtSrc, JTextField txtOutput,
+    private void applyToForm(JBTConfig cfg,
+            JTextField txtProject, JComboBox<String> comboSourceSet,
+            JTextField txtPackageFolder, JTextField txtMainClass,
+            JTextField txtOutput,
             JComboBox<String> comboBuildMode, DefaultComboBoxModel<String> libModel,
-            JCheckBox chkAddResources, JCheckBox chkClose, JCheckBox chkDebug,
-            JCheckBox chkHasIcon, JTextField txtIconPath, JButton btnBrowseIcon) {
+            JCheckBox chkAddResources, JTextField txtResourcesPath, JButton btnBrowseRes,
+            JCheckBox chkClose, JCheckBox chkDebug,
+            JCheckBox chkAddIcon, JTextField txtIconPath, JButton btnBrowseIcon) {
 
         txtProject.setText(cfg.projectFolder);
-        txtSrc.setText(cfg.srcFolder);
+        comboSourceSet.setSelectedItem(cfg.sourceSet);
+        txtPackageFolder.setText(cfg.packageFolder);
+        txtMainClass.setText(cfg.mainClass);
         txtOutput.setText(cfg.output);
         comboBuildMode.setSelectedItem(cfg.buildMode);
 
@@ -311,73 +338,71 @@ public class GUI {
         for (String lib : cfg.library) libModel.addElement(lib);
 
         chkAddResources.setSelected(cfg.addResources);
-        chkClose.setSelected(cfg.closeWhenBuildFinish);
-        chkDebug.setSelected(cfg.debug);
+        txtResourcesPath.setText(cfg.resourcesPath);
+        txtResourcesPath.setEnabled(cfg.addResources);
+        btnBrowseRes.setEnabled(cfg.addResources);
 
-        chkHasIcon.setSelected(cfg.hasIcon);
-        txtIconPath.setEnabled(cfg.hasIcon);
-        btnBrowseIcon.setEnabled(cfg.hasIcon);
-        txtIconPath.setText(cfg.hasIcon && !cfg.iconPath.isEmpty() ? cfg.iconPath : "(no icon)");
+        chkClose.setSelected(cfg.closeWhenBuildFinish);
+        chkDebug.setSelected(cfg.debugBuild);
+
+        chkAddIcon.setSelected(cfg.addIcon);
+        txtIconPath.setText(cfg.iconPath);
+        txtIconPath.setEnabled(cfg.addIcon);
+        btnBrowseIcon.setEnabled(cfg.addIcon);
     }
 
-    // ── Helper: read form → JBTConfig ────────────────────────────────────────
-
-    private JBTConfig collectConfig(JTextField txtProject, JTextField txtSrc,
-            JTextField txtOutput, JComboBox<String> comboBuildMode,
-            DefaultComboBoxModel<String> libModel,
-            JCheckBox chkAddResources, JCheckBox chkClose, JCheckBox chkDebug,
-            JCheckBox chkHasIcon, JTextField txtIconPath) {
+    private JBTConfig collectConfig(
+            JTextField txtProject, JComboBox<String> comboSourceSet,
+            JTextField txtPackageFolder, JTextField txtMainClass,
+            JTextField txtOutput,
+            JComboBox<String> comboBuildMode, DefaultComboBoxModel<String> libModel,
+            JCheckBox chkAddResources, JTextField txtResourcesPath,
+            JCheckBox chkClose, JCheckBox chkDebug,
+            JCheckBox chkAddIcon, JTextField txtIconPath) {
 
         JBTConfig cfg = new JBTConfig();
         cfg.projectFolder        = txtProject.getText().trim();
-        cfg.srcFolder            = txtSrc.getText().trim();
+        cfg.sourceSet            = comboSourceSet.getSelectedItem().toString();
+        cfg.packageFolder        = txtPackageFolder.getText().trim();
+        cfg.mainClass            = txtMainClass.getText().trim().isEmpty() ? "Main" : txtMainClass.getText().trim();
         cfg.output               = txtOutput.getText().trim();
         cfg.buildMode            = comboBuildMode.getSelectedItem().toString();
         cfg.addResources         = chkAddResources.isSelected();
+        cfg.resourcesPath        = txtResourcesPath.getText().trim();
         cfg.closeWhenBuildFinish = chkClose.isSelected();
-        cfg.debug                = chkDebug.isSelected();
-        cfg.hasIcon              = chkHasIcon.isSelected();
-        String ip = txtIconPath.getText().trim();
-        cfg.iconPath = (chkHasIcon.isSelected() && !ip.equals("(no icon)")) ? ip : "";
+        cfg.debugBuild           = chkDebug.isSelected();
+        cfg.addIcon              = chkAddIcon.isSelected();
+        cfg.iconPath             = txtIconPath.getText().trim();
 
         cfg.library = new ArrayList<>();
         for (int i = 0; i < libModel.getSize(); i++) cfg.library.add(libModel.getElementAt(i));
-
         return cfg;
     }
 
-    // ── Helper: save config to file ──────────────────────────────────────────
-
     private void saveConfig(JFrame frame, String path,
-            JTextField txtProject, JTextField txtSrc, JTextField txtOutput,
+            JTextField txtProject, JComboBox<String> comboSourceSet,
+            JTextField txtPackageFolder, JTextField txtMainClass,
+            JTextField txtOutput,
             JComboBox<String> comboBuildMode, DefaultComboBoxModel<String> libModel,
-            JCheckBox chkAddResources, JCheckBox chkClose, JCheckBox chkDebug,
-            JCheckBox chkHasIcon, JTextField txtIconPath) {
+            JCheckBox chkAddResources, JTextField txtResourcesPath,
+            JCheckBox chkClose, JCheckBox chkDebug,
+            JCheckBox chkAddIcon, JTextField txtIconPath) {
         try {
-            JBTConfig cfg = collectConfig(txtProject, txtSrc, txtOutput,
-                comboBuildMode, libModel, chkAddResources, chkClose,
-                chkDebug, chkHasIcon, txtIconPath);
+            JBTConfig cfg = collectConfig(txtProject, comboSourceSet, txtPackageFolder,
+                txtMainClass, txtOutput, comboBuildMode, libModel,
+                chkAddResources, txtResourcesPath,
+                chkClose, chkDebug, chkAddIcon, txtIconPath);
             cfg.configFilePath = path;
-
-            // Preserve AutoBuild / sys from existing file if present
-            if (path != null && new File(path).exists()) {
-                String oldJson = new String(Files.readAllBytes(Paths.get(path)));
-                JBTConfig old = new JBTConfig();
-                old.parse(oldJson);
-                cfg.autoBuild = old.autoBuild;
-                cfg.sys       = old.sys;
-            }
-
             Files.write(Paths.get(path), cfg.toJson().getBytes());
             JOptionPane.showMessageDialog(frame,
                 "Config saved to " + path, "Saved", JOptionPane.INFORMATION_MESSAGE);
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(frame,
-                "Error saving config: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                "Error saving: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 
-    // ── GridBagLayout helpers ─────────────────────────────────────────────────
+    // ── GridBagLayout shortcuts ───────────────────────────────────────────────
 
     private void addLabel(JPanel p, GridBagConstraints gbc, int row, String text) {
         gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0; gbc.gridwidth = 1;

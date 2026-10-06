@@ -1,17 +1,21 @@
 {
-    "sys": "run",
     "ProjectFolder": "C:\\Users\\Pai\\Documents\\Java\\JBT",
-    "SrcFolder": "java",
+    "SourceSet": "main",
+    "PackageFolder": "",
+    "MainClass": "Main",
     "Output": "build\\SNAPSHOT-v1.0.1-1",
     "BuildMode": "Onefile",
     "Library": [],
-    "AutoBuild": false,
     "CloseWhenBuildFinish": false,
     "TerminalOnly": false,
-    "AddResources": false,
+    "Resources": {
+        "AddResources": false,
+        "ResourcesPath": ""
+    },
     "Icon": {
-        "HasIcon": false,
+        "AddIcon": false,
         "IconPath": ""
     },
-    "Debug": false
+    "DebugBuild": false
 }
+

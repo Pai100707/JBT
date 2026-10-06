@@ -9,259 +9,253 @@ import java.util.List;
 public class Build {
 
     /**
-     * Main build entry point.  All configuration comes from JBTConfig.
+     * Main build entry point — uses JBTConfig + Logger.
+     *
+     * Steps:
+     *   1. Compile Java sources from resolvedSrcFolder()
+     *   2. Copy resources (if AddResources)
+     *   3. Copy icon into JAR + copy to output folder for jpackage (if AddIcon)
+     *   4. Handle libraries (Onefile = extract / Normal = copy to lib/)
+     *   5. Package everything into a runnable JAR
      */
     public void StartBuild(JBTConfig cfg, Logger logger) {
         try {
-            FileManager fileManager = new FileManager();
+            FileManager fm = new FileManager();
 
-            Path projectFolder    = Paths.get(cfg.projectFolder);
-            String resolvedSrc    = cfg.resolvedSrcFolder();
-            Path srcFolder        = projectFolder.resolve(resolvedSrc);
-            Path outputFolder     = projectFolder.resolve(cfg.output);
+            Path projectFolder     = Paths.get(cfg.projectFolder);
+            String resolvedSrc     = cfg.resolvedSrcFolder();
+            Path srcFolder         = projectFolder.resolve(resolvedSrc);
+            Path outputFolder      = projectFolder.resolve(cfg.output);
             Path tempClassesFolder = projectFolder.resolve("temp_classes");
 
             logger.log("Preparing directory structures...");
-            fileManager.createFolder(outputFolder, false);
-            fileManager.createFolder(tempClassesFolder, true);
+            fm.createFolder(outputFolder, false);
+            fm.createFolder(tempClassesFolder, true);
 
-            // ── Collect Java source files ────────────────────────────────
+            // ── 1. Compile ───────────────────────────────────────────────
             logger.log("Scanning for Java source files in: " + srcFolder);
             List<String> javaFiles = new ArrayList<>();
             findJavaFiles(srcFolder.toFile(), javaFiles);
 
             if (javaFiles.isEmpty()) {
-                logger.warn("No .java files found in " + resolvedSrc);
-                fileManager.deleteFolder(tempClassesFolder);
+                logger.warn("No .java files found in: " + resolvedSrc);
+                fm.deleteFolder(tempClassesFolder);
                 return;
             }
             logger.log("Found " + javaFiles.size() + " file(s) to compile.");
-            if (cfg.debug) {
-                for (String f : javaFiles) logger.log("  Source: " + f);
-            }
+            if (cfg.debugBuild) javaFiles.forEach(f -> logger.log("  Source: " + f));
 
-            // ── Build classpath ──────────────────────────────────────────
+            // Build classpath
             StringBuilder classpath = new StringBuilder(".");
-            String pathSeparator = System.getProperty("path.separator");
+            String sep = System.getProperty("path.separator");
             for (String lib : cfg.library) {
-                Path libPath = projectFolder.resolve(lib);
-                classpath.append(pathSeparator).append(libPath.toAbsolutePath());
+                classpath.append(sep).append(projectFolder.resolve(lib).toAbsolutePath());
             }
-            if (cfg.debug) logger.log("Classpath: " + classpath);
+            if (cfg.debugBuild) logger.log("Classpath: " + classpath);
 
-            // ── Compile ──────────────────────────────────────────────────
-            logger.log("Executing javac compiler engine...");
+            logger.log("Executing javac...");
             List<String> javacCmd = new ArrayList<>();
             javacCmd.add("javac");
-            javacCmd.add("-cp");
-            javacCmd.add(classpath.toString());
-            javacCmd.add("-d");
-            javacCmd.add(tempClassesFolder.toString());
+            javacCmd.add("-cp"); javacCmd.add(classpath.toString());
+            javacCmd.add("-d");  javacCmd.add(tempClassesFolder.toString());
             javacCmd.addAll(javaFiles);
 
-            boolean compileSuccess = runProcess(javacCmd, projectFolder.toFile(), logger);
-            if (!compileSuccess) {
-                logger.error("Compilation failed! Please check your code syntax.");
-                fileManager.deleteFolder(tempClassesFolder);
+            if (!runProcess(javacCmd, projectFolder.toFile(), logger)) {
+                logger.error("Compilation failed! Please check your code.");
+                fm.deleteFolder(tempClassesFolder);
                 return;
             }
-            logger.log("Java source code successfully compiled into byte code.");
+            logger.log("Compilation successful.");
 
-            // ── Copy resources (AddResources) ────────────────────────────
+            // ── 2. Resources ─────────────────────────────────────────────
             if (cfg.addResources) {
-                // Resources live at {ProjectFolder}/src/main/resources
-                Path resourcesFolder = projectFolder.resolve("src/main/resources");
+                Path resourcesFolder = projectFolder.resolve(cfg.resolvedResourcesPath());
                 if (Files.exists(resourcesFolder)) {
                     logger.log("Adding resources from: " + resourcesFolder);
-                    copyDirectory(resourcesFolder, tempClassesFolder, logger, cfg.debug);
+                    copyDirectory(resourcesFolder, tempClassesFolder, logger, cfg.debugBuild);
                 } else {
-                    logger.warn("AddResources=true but folder not found: " + resourcesFolder);
+                    logger.warn("AddResources=true but path not found: " + resourcesFolder);
                 }
             }
 
-            // ── Copy icon into jar resources (if HasIcon) ────────────────
-            if (cfg.hasIcon) {
-                if (cfg.iconPath.isEmpty()) {
-                    logger.warn("Icon.HasIcon is true but Icon.IconPath is empty — skipping icon.");
+            // ── 3. Icon ──────────────────────────────────────────────────
+            Path resolvedIconFile = null;
+            if (cfg.addIcon) {
+                Path iconSrc = projectFolder.resolve(cfg.resolvedIconPath());
+                if (!Paths.get(cfg.resolvedIconPath()).isAbsolute())
+                    iconSrc = projectFolder.resolve(cfg.resolvedIconPath());
+                else
+                    iconSrc = Paths.get(cfg.resolvedIconPath());
+
+                if (Files.exists(iconSrc)) {
+                    // Pack icon into JAR root (accessible as classpath resource)
+                    Path iconInJar = tempClassesFolder.resolve(iconSrc.getFileName());
+                    Files.copy(iconSrc, iconInJar, StandardCopyOption.REPLACE_EXISTING);
+                    logger.log("Icon packed into JAR: " + iconSrc.getFileName());
+
+                    // Also copy icon next to the output JAR for jpackage --icon
+                    Path iconForJpackage = outputFolder.resolve(iconSrc.getFileName());
+                    Files.copy(iconSrc, iconForJpackage, StandardCopyOption.REPLACE_EXISTING);
+                    resolvedIconFile = iconForJpackage;
+                    logger.log("Icon copied to output for jpackage: " + iconForJpackage);
                 } else {
-                    Path iconSrc = Paths.get(cfg.iconPath);
-                    if (!iconSrc.isAbsolute()) iconSrc = projectFolder.resolve(cfg.iconPath);
-                    if (Files.exists(iconSrc)) {
-                        Path iconDest = tempClassesFolder.resolve(iconSrc.getFileName());
-                        Files.copy(iconSrc, iconDest, StandardCopyOption.REPLACE_EXISTING);
-                        logger.log("Icon packed: " + iconSrc.getFileName());
-                    } else {
-                        logger.warn("Icon file not found: " + iconSrc);
-                    }
+                    logger.warn("Icon file not found: " + iconSrc);
                 }
             }
 
-            // ── Library handling (Onefile vs Normal) ─────────────────────
+            // ── 4. Libraries ─────────────────────────────────────────────
             if ("Onefile".equalsIgnoreCase(cfg.buildMode)) {
-                logger.log("Extracting libraries for Onefile build via stream...");
+                logger.log("Extracting libraries for Onefile build...");
                 for (String lib : cfg.library) {
                     Path libPath = projectFolder.resolve(lib);
                     if (Files.exists(libPath)) {
                         logger.log("  + Extracting: " + libPath.getFileName());
-                        extractJar(libPath, tempClassesFolder, logger, cfg.debug);
+                        extractJar(libPath, tempClassesFolder, logger, cfg.debugBuild);
                     } else {
                         logger.warn("  ! Library not found: " + libPath);
                     }
                 }
             } else {
-                logger.log("Setting up Normal build with lib folder...");
-                Path libOutputFolder = outputFolder.resolve("lib");
-                fileManager.createFolder(libOutputFolder, false);
+                logger.log("Setting up Normal build lib folder...");
+                Path libOut = outputFolder.resolve("lib");
+                fm.createFolder(libOut, false);
                 for (String lib : cfg.library) {
                     Path libPath = projectFolder.resolve(lib);
                     if (Files.exists(libPath)) {
                         logger.log("  + Copying: " + libPath.getFileName());
-                        Files.copy(libPath, libOutputFolder.resolve(libPath.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+                        Files.copy(libPath, libOut.resolve(libPath.getFileName()), StandardCopyOption.REPLACE_EXISTING);
                     } else {
                         logger.warn("  ! Library not found: " + libPath);
                     }
                 }
             }
 
-            // ── Package JAR ──────────────────────────────────────────────
-            String outputJarName = projectFolder.getFileName().toString() + ".jar";
-            Path finalJarPath    = outputFolder.resolve(outputJarName);
-            logger.log("Packaging compiled files into executable JAR: " + outputJarName + "...");
+            // ── 5. Package JAR ───────────────────────────────────────────
+            String jarName    = projectFolder.getFileName().toString() + ".jar";
+            Path   finalJar   = outputFolder.resolve(jarName);
+            logger.log("Packaging JAR: " + jarName + "...");
 
-            try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(Files.newOutputStream(finalJarPath))) {
+            try (java.util.zip.ZipOutputStream zos =
+                    new java.util.zip.ZipOutputStream(Files.newOutputStream(finalJar))) {
+
                 // Manifest
-                java.util.zip.ZipEntry manifestEntry = new java.util.zip.ZipEntry("META-INF/MANIFEST.MF");
-                zos.putNextEntry(manifestEntry);
-                String manifestContent = "Manifest-Version: 1.0\r\nMain-Class: Main\r\n\r\n";
-                zos.write(manifestContent.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                zos.putNextEntry(new java.util.zip.ZipEntry("META-INF/MANIFEST.MF"));
+                String mainClassName = cfg.resolvedMainClass();
+                zos.write(("Manifest-Version: 1.0\r\nMain-Class: " + mainClassName + "\r\n\r\n")
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
                 zos.closeEntry();
+                if (cfg.debugBuild) logger.log("MANIFEST Main-Class: " + mainClassName);
 
-                packDirectory(tempClassesFolder, tempClassesFolder, zos, logger, cfg.debug);
+                packDirectory(tempClassesFolder, tempClassesFolder, zos, logger, cfg.debugBuild);
 
                 logger.log("\nSUCCESSFUL BUILD!");
-                logger.log("Output Location: " + finalJarPath.toAbsolutePath());
+                logger.log("Output: " + finalJar.toAbsolutePath());
+                if (resolvedIconFile != null) {
+                    logger.log("Icon (for jpackage --icon): " + resolvedIconFile.toAbsolutePath());
+                }
             } catch (Exception jarEx) {
-                logger.error("Packaging failed while executing zip assembly engine: " + jarEx.getMessage());
+                logger.error("JAR packaging failed: " + jarEx.getMessage());
             }
 
-            logger.log("Cleaning temporary classes directory...");
-            fileManager.deleteFolder(tempClassesFolder);
+            logger.log("Cleaning temp_classes...");
+            fm.deleteFolder(tempClassesFolder);
 
-        } catch (Exception error) {
-            logger.error("Unexpected internal compiler error: " + error.getMessage());
+        } catch (Exception e) {
+            logger.error("Unexpected build error: " + e.getMessage());
         }
     }
 
-    // ── Legacy overload kept for backwards compatibility ──────────────────────
+    // ── Legacy overload (GUI backwards compat) ────────────────────────────────
 
     /** @deprecated Use {@link #StartBuild(JBTConfig, Logger)} instead. */
     @Deprecated
-    @SuppressWarnings("deprecation")
     public void StartBuild(String projectFolderStr, String srcFolderStr, String outputFolderStr,
                            List<String> libraries, String buildMode, GUI gui) {
         JBTConfig cfg = new JBTConfig();
         cfg.projectFolder = projectFolderStr;
-        cfg.srcFolder     = srcFolderStr;
+        // srcFolderStr is a full relative path like "src/main/java" — map to sourceSet+packageFolder
+        cfg.sourceSet     = "main";
+        cfg.packageFolder = "";
         cfg.output        = outputFolderStr;
         cfg.library       = new ArrayList<>(libraries);
         cfg.buildMode     = buildMode;
-
-        Logger logger = new Logger(false, msg -> gui.Log(msg));
-        StartBuild(cfg, logger);
+        StartBuild(cfg, new Logger(false, msg -> gui.Log(msg)));
     }
 
-    // ── File helpers ─────────────────────────────────────────────────────────
+    // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private void findJavaFiles(File folder, List<String> javaFiles) {
+    private void findJavaFiles(File folder, List<String> out) {
         File[] files = folder.listFiles();
         if (files == null) return;
-        for (File file : files) {
-            if (file.isDirectory()) {
-                findJavaFiles(file, javaFiles);
-            } else if (file.getName().endsWith(".java")) {
-                javaFiles.add(file.getAbsolutePath());
-            }
+        for (File f : files) {
+            if (f.isDirectory()) findJavaFiles(f, out);
+            else if (f.getName().endsWith(".java")) out.add(f.getAbsolutePath());
         }
     }
 
-    private boolean runProcess(List<String> command, File workingDir, Logger logger) {
+    private boolean runProcess(List<String> cmd, File workingDir, Logger logger) {
         try {
-            ProcessBuilder builder = new ProcessBuilder(command);
-            builder.directory(workingDir);
-            builder.redirectErrorStream(true);
-            Process process = builder.start();
-
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+            ProcessBuilder pb = new ProcessBuilder(cmd);
+            pb.directory(workingDir);
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
                 String line;
-                while ((line = reader.readLine()) != null) {
-                    logger.log("[Compiler] " + line);
-                }
+                while ((line = br.readLine()) != null) logger.log("[javac] " + line);
             }
-
-            int exitCode = process.waitFor();
-            return exitCode == 0;
+            return p.waitFor() == 0;
         } catch (Exception e) {
-            logger.error("System process execution failure: " + e.getMessage());
+            logger.error("Process failed: " + e.getMessage());
             return false;
         }
     }
 
-    /** Recursively copy a directory tree into destRoot (preserving sub-paths). */
     private void copyDirectory(Path src, Path destRoot, Logger logger, boolean debug) throws Exception {
         Files.walk(src).forEach(path -> {
             try {
                 if (Files.isDirectory(path)) return;
-                Path relative = src.relativize(path);
-                Path dest     = destRoot.resolve(relative);
+                Path rel  = src.relativize(path);
+                Path dest = destRoot.resolve(rel);
                 Files.createDirectories(dest.getParent());
                 Files.copy(path, dest, StandardCopyOption.REPLACE_EXISTING);
-                if (debug) logger.log("  Resource: " + relative);
+                if (debug) logger.log("  Resource: " + rel);
             } catch (IOException e) {
                 logger.warn("Could not copy resource: " + path + " — " + e.getMessage());
             }
         });
     }
 
-    /** Extract a JAR/ZIP into destFolder, skipping signing metadata. */
-    private void extractJar(Path jarPath, Path destFolder, Logger logger, boolean debug) {
-        try (java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(Files.newInputStream(jarPath))) {
+    private void extractJar(Path jar, Path dest, Logger logger, boolean debug) {
+        try (java.util.zip.ZipInputStream zis =
+                new java.util.zip.ZipInputStream(Files.newInputStream(jar))) {
             java.util.zip.ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
                 if (entry.isDirectory()) continue;
-                String name      = entry.getName();
-                String upperName = name.toUpperCase();
-                if (upperName.equalsIgnoreCase("META-INF/MANIFEST.MF") ||
-                    upperName.equalsIgnoreCase("module-info.class")) continue;
-                if (upperName.startsWith("META-INF/") &&
-                    (upperName.endsWith(".SF") || upperName.endsWith(".DSA") || upperName.endsWith(".RSA"))) continue;
-
-                Path target = destFolder.resolve(name);
-                Files.createDirectories(target.getParent());
-                Files.copy(zis, target, StandardCopyOption.REPLACE_EXISTING);
-                if (debug) logger.log("    Extracted: " + name);
+                String n = entry.getName(), u = n.toUpperCase();
+                if (u.equalsIgnoreCase("META-INF/MANIFEST.MF") || u.equalsIgnoreCase("module-info.class")) continue;
+                if (u.startsWith("META-INF/") && (u.endsWith(".SF") || u.endsWith(".DSA") || u.endsWith(".RSA"))) continue;
+                Path t = dest.resolve(n);
+                Files.createDirectories(t.getParent());
+                Files.copy(zis, t, StandardCopyOption.REPLACE_EXISTING);
+                if (debug) logger.log("    Extracted: " + n);
             }
         } catch (IOException e) {
-            logger.error("Failed to extract " + jarPath.getFileName() + ": " + e.getMessage());
+            logger.error("Extract failed for " + jar.getFileName() + ": " + e.getMessage());
         }
     }
 
-    private void packDirectory(Path baseFolder, Path currentFolder,
+    private void packDirectory(Path base, Path current,
                                java.util.zip.ZipOutputStream zos,
                                Logger logger, boolean debug) throws Exception {
-        File[] files = currentFolder.toFile().listFiles();
+        File[] files = current.toFile().listFiles();
         if (files == null) return;
-        for (File file : files) {
-            if (file.isDirectory()) {
-                packDirectory(baseFolder, file.toPath(), zos, logger, debug);
-            } else {
-                Path relativePath = baseFolder.relativize(file.toPath());
-                String entryName  = relativePath.toString().replace("\\", "/");
-                if (debug) logger.log("  Packing: " + entryName);
-                java.util.zip.ZipEntry zipEntry = new java.util.zip.ZipEntry(entryName);
-                zos.putNextEntry(zipEntry);
-                Files.copy(file.toPath(), zos);
-                zos.closeEntry();
-            }
+        for (File f : files) {
+            if (f.isDirectory()) { packDirectory(base, f.toPath(), zos, logger, debug); continue; }
+            String entry = base.relativize(f.toPath()).toString().replace("\\", "/");
+            if (debug) logger.log("  Packing: " + entry);
+            zos.putNextEntry(new java.util.zip.ZipEntry(entry));
+            Files.copy(f.toPath(), zos);
+            zos.closeEntry();
         }
     }
 }
